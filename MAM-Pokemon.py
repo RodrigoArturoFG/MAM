@@ -3,323 +3,195 @@ from PIL import Image
 import os
 import sys
 
-# --- CARGA DE IMÁGENES (Normalización por Media) ---
-def cargar_imagenes_a_matriz(rutas_imagenes):
-    datos_aplanados = []
-    shape_original = None
-    for ruta in rutas_imagenes:
-        with Image.open(ruta).convert('L') as img:
-            arr = np.array(img, dtype=np.int32)
-            # 1. INVERSIÓN: Pokémon Blanco (255), Fondo Negro (0)
-            arr = 255 - arr
-            # 2. MEDIA: Restamos la media para eliminar el sesgo del fondo
-            arr = arr - np.mean(arr) 
-            
-            if shape_original is None: shape_original = arr.shape
-            datos_aplanados.append(arr.flatten())
-    return np.array(datos_aplanados), shape_original
+# ====================================================
+#   FUNCIONES BASE MORFOLÓGICAS (Teoría de Ritter)
+# ====================================================
 
-# Memoría asociativa morfológica de tipo Max
-"""
 def aprendizaje_max(X, Y):
-    num_patrones, n = X.shape
-    m = Y.shape[1] # Cantidad de elementos en la salida
-    W = np.full((m, n), -np.inf) # Inicializamos con valor muy bajo para el Max
-    
-    # Optimización con Numpy para evitar el doble for lento:
-    for mu in range(num_patrones):
-        # Para cada patrón, calculamos la matriz de diferencias (Y - X)
-        # y actualizamos W con el máximo actual
-        diferencia = Y[mu].reshape(-1, 1) - X[mu].reshape(1, -1)
-        W = np.maximum(W, diferencia)
-        
-    return W
-"""
-
-# --- APRENDIZAJE (Valores Neutros Absolutos) ---
-def aprendizaje_max(X, Y):
+    """Construcción de la matriz W usando suma-máxima (Supremo)"""
     p, n = X.shape
-    m = Y.shape[1] # Número de clases o píxeles de salida
-    W = np.full((m, n), -1000000, dtype=np.int32) # Valor neutro extremo
+    m = Y.shape[1]
+    # Inicializamos con un valor neutro inferior (épsilon)
+    W = np.full((m, n), -10, dtype=np.int32)
     for mu in range(p):
+        # Operación: y_i - x_j
         diff = Y[mu].reshape(-1, 1) - X[mu].reshape(1, -1)
         W = np.maximum(W, diff)
     return W
 
-"""
-def recuperacion_max(W, x_test):
-    m, n = W.shape
-    y_salida = np.zeros(m)
-    for i in range(m):
-        # Operación fundamental: Max(W_ij + x_j)
-        y_salida[i] = np.max(W[i, :] + x_test)
-    return y_salida
-"""
-
-# --- RECUPERACIÓN (Sin ajustes, álgebra pura) ---
-def recuperacion_max(W, x_test):
-    m = W.shape[0]
-    y_salida = np.zeros(m, dtype=np.int32)
-    for i in range(m):
-        y_salida[i] = np.max(W[i, :] + x_test)
-    return y_salida
-
-# Memoría asociativa morfológica de tipo Min
-"""
 def aprendizaje_min(X, Y):
-    num_patrones, n = X.shape
-    m = Y.shape[1] # Cantidad de elementos en la salida
-    
-    # Inicializamos con infinito positivo (np.inf) porque buscaremos el MIN
-    M = np.full((m, n), np.inf) 
-    
-    # Optimización con Numpy (idéntico al procedimiento de la Max):
-    for mu in range(num_patrones):
-        # Para cada patrón, calculamos la matriz de diferencias (Y - X)
-        # y actualizamos M con el mínimo actual
-        diferencia = Y[mu].reshape(-1, 1) - X[mu].reshape(1, -1)
-        M = np.minimum(M, diferencia)
-        
-    return M
-"""
-
-# --- APRENDIZAJE (Valores Neutros Absolutos) ---
-def aprendizaje_min(X, Y):
+    """Construcción de la matriz M usando suma-mínima (Ínfimo)"""
     p, n = X.shape
     m = Y.shape[1]
-    M = np.full((m, n), 1000000, dtype=np.int32)
+    # Inicializamos con un valor neutro superior
+    M = np.full((m, n), 10, dtype=np.int32)
     for mu in range(p):
         diff = Y[mu].reshape(-1, 1) - X[mu].reshape(1, -1)
         M = np.minimum(M, diff)
     return M
 
-"""
-def recuperacion_min(M, x_test):
-    m, n = M.shape
-    y_salida = np.zeros(m)
+def recuperacion_max(W, x_test):
+    """Inferencia Morfológica Superior: y = W ⊠ x"""
+    m = W.shape[0]
+    y_salida = np.zeros(m, dtype=np.int32)
+    x_test = x_test.flatten().astype(np.int32)
     for i in range(m):
-        # Operación fundamental: Min(M_ij + x_j)
-        y_salida[i] = np.min(M[i, :] + x_test)
-        
+        y_salida[i] = np.max(W[i, :] + x_test)
     return y_salida
-"""
 
-# --- RECUPERACIÓN (Sin ajustes, álgebra pura) ---
 def recuperacion_min(M, x_test):
+    """Inferencia Morfológica Inferior: y = M ⊞ x"""
     m = M.shape[0]
     y_salida = np.zeros(m, dtype=np.int32)
+    x_test = x_test.flatten().astype(np.int32)
     for i in range(m):
         y_salida[i] = np.min(M[i, :] + x_test)
     return y_salida
 
-# Función para guardar resultados morfológicos como imágenes
-def guardar_resultado_morfo(y_vector, shape_original, nombre_archivo, carpeta_destino="resultados"):
-    
-    # 1. Crear la carpeta si no existe
-    if not os.path.exists(carpeta_destino):
-        os.makedirs(carpeta_destino)
+# ====================================================
+#   CARGA, GUARDADO Y DIAGNÓSTICO
+# ====================================================
 
-    # En este caso, asumimos que el vector ya está en el rango adecuado (0-255) después de las operaciones morfológicas.
-    # 2. Reconstruir la forma de la imagen (Reshape de 1D a 2D)
-    # Importante: Aplicamos clip(0, 255) por si las sumas morfológicas 
-    # generaron valores fuera del rango de color estándar.
-    imagen_array = y_vector.reshape(shape_original)
-    # 1. Deshacer la traslación de media cero
-    imagen_array = imagen_array + 127
-    # 2. Re-invertir si quieres el fondo blanco original
-    imagen_array = 255 - imagen_array
-    imagen_array = np.clip(imagen_array, 0, 255).astype(np.uint8)
-    
-    # 3. Crear el objeto de imagen desde el array de Numpy
-    img_resultante = Image.fromarray(imagen_array)
-    
-    # 4. Guardamos la imagen resultante en la ruta especificada
-    ruta_completa = os.path.join(carpeta_destino, nombre_archivo)
-    img_resultante.save(ruta_completa)
-    
-    print(f"Imagen guardada exitosamente en: {ruta_completa}")
+def cargar_imagenes_a_matriz(rutas_imagenes):
+    """Carga imágenes BMP y las binariza (Pokémon=1, Fondo=0)"""
+    datos = []
+    shape_original = None
+    for ruta in rutas_imagenes:
+        if not os.path.exists(ruta):
+            print(f"Error: No existe {ruta}")
+            continue
+        with Image.open(ruta).convert('L') as img:
+            arr = np.array(img)
+            # TRANSFORMACIÓN: Silueta (Negro < 128) -> 1, Fondo (Blanco >= 128) -> 0
+            # Según la literatura, el objeto de interés debe ser el valor alto (señal)
+            arr_bin = np.where(arr < 128, 1, 0).astype(np.int32)
+            if shape_original is None: shape_original = arr_bin.shape
+            datos.append(arr_bin.flatten())
+    return np.array(datos), shape_original
 
-# --- FUNCIONES DE SOPORTE HETEROASOCIATIVAS ---
-def ejecutar_heteroasociativa_max(rutas_limpias, rutas_ruido, nombres_clases):
-    """Clasificación con robustez a ruido sustractivo (Pimienta/Negro)"""
-    print("\n--- INICIANDO MAM HETEROASOCIATIVA MAX ---")
-    
-    X_limpias, _ = cargar_imagenes_a_matriz(rutas_limpias)
-    num_clases = len(nombres_clases)
+def guardar_resultado_morfo(y_vector, shape_original, nombre_archivo, carpeta_destino):
+    """Reconstruye la imagen (1 -> Negro, 0 -> Blanco)"""
+    if not os.path.exists(carpeta_destino): os.makedirs(carpeta_destino)
+    res = y_vector.reshape(shape_original)
+    # Invertimos la binarización para el reporte visual (Fondo Blanco 255)
+    res_img = np.where(res >= 1, 0, 255).astype(np.uint8)
+    Image.fromarray(res_img).save(os.path.join(carpeta_destino, nombre_archivo))
 
-    # ETIQUETAS: Usamos 1000 para la clase correcta y -1000 para las demás
-    Y_etiquetas = (np.eye(num_clases) * 2000) - 1000
-    W = aprendizaje_max(X_limpias, Y_etiquetas)
-    X_ruido, _ = cargar_imagenes_a_matriz(rutas_ruido)
-    for i, x_test in enumerate(X_ruido):
-        y_rec = recuperacion_max(W, x_test)
-        idx = np.argmax(y_rec)
-        print(f"DEBUG MAX - Vector: {y_rec}") # Debería mostrar valores distintos ahora
-        print(f"Ruido_{i} -> {nombres_clases[idx]}")
-    
-    
-
-def ejecutar_heteroasociativa_min(rutas_limpias, rutas_ruido, nombres_clases):
-    print("\n--- INICIANDO MAM HETEROASOCIATIVA MIN (Normalizada) ---")
-    
-    X_limpias, _ = cargar_imagenes_a_matriz(rutas_limpias)
-    num_clases = len(nombres_clases)
-    
-    # ETIQUETAS: Usamos -1000 para la clase correcta y 1000 para las demás
-    Y_etiquetas = 1000 - (np.eye(num_clases) * 2000)
-    
-    M = aprendizaje_min(X_limpias, Y_etiquetas)
-    X_ruido, _ = cargar_imagenes_a_matriz(rutas_ruido)
-    
-    for i, x_test in enumerate(X_ruido):
-        y_rec = recuperacion_min(M, x_test)
-        # IMPORTANTE: En MIN usamos ARGMIN porque buscamos el valor más pequeño
-        idx = np.argmin(y_rec)
-        print(f"DEBUG MIN - Vector: {y_rec}")
-        print(f"Ruido_{i} -> {nombres_clases[idx]}")
-
-
-# --- FUNCIONES DE SOPORTE AUTOASOCIATIVAS ---
-def ejecutar_autoasociativa_max(rutas_entrenamiento, rutas_con_ruido):
-    print("\n--- INICIANDO MAM AUTOASOCIATIVA MAX ---")
-    
-    X_train, shape_original = cargar_imagenes_a_matriz(rutas_entrenamiento)
-    W_auto = aprendizaje_max(X_train, X_train)
-    X_test_ruido, _ = cargar_imagenes_a_matriz(rutas_con_ruido)
-
-    os.makedirs("Resultados/Autoasociativa_Max", exist_ok=True)
-    for i, x_test in enumerate(X_test_ruido):
-        y_rec = recuperacion_max(W_auto, x_test)
-        # 1. Deshacer media
-        y_final = y_rec + 127 
-        # 2. Invertir para que el reporte se vea con fondo blanco original
-        y_final = 255 - y_final 
-
-        guardar_resultado_morfo(y_final, shape_original, f"MAX_{i}.png", "Resultados/Autoasociativa_Max")
-    print("Evidencias guardadas en: Resultados/Autoasociativa_Max")
-
-
-def ejecutar_autoasociativa_min(rutas_entrenamiento, rutas_con_ruido):
-    print("\n--- INICIANDO MAM AUTOASOCIATIVA MIN (Normalizada) ---")
-    X_train, shape_original = cargar_imagenes_a_matriz(rutas_entrenamiento)
-    
-    # Aprendizaje MIN (Y = X) con inicialización en 1,000,000
-    M_auto = aprendizaje_min(X_train, X_train)
-    
-    X_test_ruido, _ = cargar_imagenes_a_matriz(rutas_con_ruido)
-    os.makedirs("Resultados/Autoasociativa_Min", exist_ok=True)
-    
-    for i, x_test in enumerate(X_test_ruido):
-        y_rec = recuperacion_min(M_auto, x_test)
-        # 1. Deshacer media
-        y_final = y_rec + 127 
-        # 2. Invertir para que el reporte se vea con fondo blanco original
-        y_final = 255 - y_final 
-        guardar_resultado_morfo(y_final, shape_original, f"MIN_{i}.png", "Resultados/Autoasociativa_Min")
-    print("Evidencias guardadas en: Resultados/Autoasociativa_Min")
-
-
-# --- FUNCION DE SOPORTE PARA EXPORTAR MATRICES A TEXTO ---
-def guardar_matrices_a_texto(rutas_imagenes):
-    """
-    Exporta las imágenes de entrenamiento a archivos .txt para validar 
-    que los valores de los píxeles estén en el rango real (0-255).
-    """
-    print("\n--- EXPORTANDO MATRICES DE DIAGNÓSTICO (Rango 0-255) ---")
-
-    carpeta_destino="Imagenes-Matriz"
-    if not os.path.exists(carpeta_destino):
-        os.makedirs(carpeta_destino)
-
+def guardar_matrices_a_texto(rutas_imagenes, carpeta_destino="Imagenes-Matriz"):
+    """Diagnóstico de 0s y 1s"""
+    if not os.path.exists(carpeta_destino): os.makedirs(carpeta_destino)
     for ruta in rutas_imagenes:
         with Image.open(ruta).convert('L') as img:
+            arr = np.array(img)
+            arr_bin = np.where(arr < 128, 1, 0).astype(np.int32)
+            nombre = os.path.basename(ruta).replace(".bmp", "")
+            np.savetxt(os.path.join(carpeta_destino, f"{nombre}_bin.txt"), arr_bin, fmt='%d', delimiter=',')
+            print(f"Matriz {nombre} exportada como 0/1.")
 
-            arr = np.array(img, dtype=np.int32)
-            # NORMALIZACIÓN: Restamos la media de la imagen para que el fondo no sature
-            arr = arr - np.mean(arr) 
-                
-            matriz = arr.astype(np.int32)
-            nombre_base = os.path.basename(ruta).replace(".bmp", "").replace(".png", "")
-            ruta_txt = os.path.join(carpeta_destino, f"{nombre_base}_matriz.txt")
-            
-            # Guardamos con un pequeño cambio para que Git lo note
-            # Usaremos un delimitador de coma para forzar el cambio de archivo
-            np.savetxt(ruta_txt, matriz, fmt='%d', delimiter=',') 
-            print(f"Diagnóstico forzado: {ruta_txt}")
+# ====================================================
+#   PROCESOS DE EJECUCIÓN
+# ====================================================
 
-# --- INTERFAZ DE USUARIO EN CONSOLA ---
+def ejecutar_heteroasociativa_max(rutas_l, rutas_r, clases):
+    print("\n--- MAM HETEROASOCIATIVA MAX (Clasificación) ---")
+    X, _ = cargar_imagenes_a_matriz(rutas_l)
+    Y = np.eye(len(clases), dtype=np.int32) # One-Hot: 1 para la clase, 0 resto
+    W = aprendizaje_max(X, Y)
+    X_r, _ = cargar_imagenes_a_matriz(rutas_r)
+    
+    print(f"{'Imagen':<12} | {'Predicción MAX'}")
+    print("-" * 35)
+    for i, x in enumerate(X_r):
+        y_r = recuperacion_max(W, x)
+        idx = np.argmax(y_r)
+        print(f"DEBUG MAX - Vector: {y_r}")
+        print(f"Ruido_{i:<7} | {clases[idx]}")
 
-# Función para limpiar la pantalla de la consola (compatible con Windows y Unix)
+def ejecutar_heteroasociativa_min(rutas_l, rutas_r, clases):
+    print("\n--- MAM HETEROASOCIATIVA MIN (Clasificación) ---")
+    X, _ = cargar_imagenes_a_matriz(rutas_l)
+    # Para MIN, usamos etiquetas invertidas si es necesario, 
+    # pero el One-Hot estándar funciona con argmin/argmax según el contraste.
+    Y = np.eye(len(clases), dtype=np.int32)
+    M = aprendizaje_min(X, Y)
+    X_r, _ = cargar_imagenes_a_matriz(rutas_r)
+    
+    print(f"{'Imagen':<12} | {'Predicción MIN'}")
+    print("-" * 35)
+    for i, x in enumerate(X_r):
+        y_r = recuperacion_min(M, x)
+        idx = np.argmax(y_r) # Usamos argmax por el contraste 0/1
+        print(f"DEBUG MIN - Vector: {y_r}")
+        print(f"Ruido_{i:<7} | {clases[idx]}")
+
+def ejecutar_autoasociativa_max(rutas_l, rutas_r):
+    print("\n--- MAM AUTOASOCIATIVA MAX (Restauración) ---")
+    X, shape = cargar_imagenes_a_matriz(rutas_l)
+    W = aprendizaje_max(X, X)
+    X_r, _ = cargar_imagenes_a_matriz(rutas_r)
+    for i, x in enumerate(X_r):
+        y_r = recuperacion_max(W, x)
+        guardar_resultado_morfo(y_r, shape, f"MAX_{i}.png", "Resultados/Autoasociativa_Max")
+    print("Resultados en Resultados/Autoasociativa_Max")
+
+def ejecutar_autoasociativa_min(rutas_l, rutas_r):
+    print("\n--- MAM AUTOASOCIATIVA MIN (Limpieza) ---")
+    X, shape = cargar_imagenes_a_matriz(rutas_l)
+    M = aprendizaje_min(X, X)
+    X_r, _ = cargar_imagenes_a_matriz(rutas_r)
+    for i, x in enumerate(X_r):
+        y_r = recuperacion_min(M, x)
+        guardar_resultado_morfo(y_r, shape, f"MIN_{i}.png", "Resultados/Autoasociativa_Min")
+    print("Resultados en Resultados/Autoasociativa_Min")
+    
+# ====================================================
+#   INTERFAZ DE USUARIO Y MENÚ
+# ====================================================
+
 def limpiar_pantalla():
-    """Limpia la consola según el sistema operativo"""
     os.system('cls' if os.name == 'nt' else 'clear')
 
-# Función para mostrar el menú principal
 def mostrar_menu():
     limpiar_pantalla()
-    print("========================================================================================================")
-    print("                     PROYECTO RECONOCIMIENTO DE IMÁGENES - MAM (IPN - ESCOM)  ")
-    print("========================================================================================================")
-    print("0. Exportar Matrices de Diagnóstico (0-255 a .txt)")
-    print("1. MAM Heteroasociativa MAX (Clasificación - Ruido Negro)")
-    print("2. MAM Heteroasociativa MIN (Clasificación - Ruido Blanco)")
-    print("3. MAM Autoasociativa MAX (Restauración - Ruido Negro)")
-    print("4. MAM Autoasociativa MIN (Limpieza - Ruido Blanco)")
+    print("====================================================")
+    print("   PROYECTO RECONOCIMIENTO DE IMÁGENES - MAM (IPN)  ")
+    print("====================================================")
+    print("0. Exportar Matrices de Diagnóstico (0 y 1 a .txt)")
+    print("1. MAM Heteroasociativa MAX (Clasificación)")
+    print("2. MAM Heteroasociativa MIN (Clasificación)")
+    print("3. MAM Autoasociativa MAX (Restauración)")
+    print("4. MAM Autoasociativa MIN (Limpieza)")
     print("5. Salir del programa")
-    print("========================================================================================================")
+    print("====================================================")
 
-# Programa principal
-def ejecutar_programa():
-    # --- CONFIGURACIÓN DE RUTAS ---
-    clases_pokemon = ["Charmander", "Gengar", "Mewtwo", "Pikachu", "Squirtle"]
-    rutas_entrenamiento = [
-        "CFP\Fase de aprendizaje\Charmander.bmp",
-        "CFP\Fase de aprendizaje\Gengar.bmp",
-        "CFP\Fase de aprendizaje\Mewtwo.bmp", 
-        "CFP\Fase de aprendizaje\Pikachu.bmp",   
-        "CFP\Fase de aprendizaje\Squirtle.bmp" 
-    ]
-    rutas_con_ruido = [
-        "CFP\Patrones espurios\Charmander-Ruido.bmp", 
-        "CFP\Patrones espurios\Gengar-Ruido.bmp", 
-        "CFP\Patrones espurios\Mewtwo-Ruido.bmp", 
-        "CFP\Patrones espurios\Pikachu-Ruido.bmp", 
-        "CFP\Patrones espurios\Squirtle-Ruido.bmp"
-    ]
+def main():
+    clases_pokes = ["Charmander", "Gengar", "Mewtwo", "Pikachu", "Squirtle"]
+    # Rutas relativas basadas en tu repo
+    rutas_entrenamiento = [f"CFP/Fase de aprendizaje/{c}.bmp" for c in clases_pokes]
+    rutas_con_ruido = [f"CFP/Patrones espurios/{c}-Ruido.bmp" for c in clases_pokes]
 
     while True:
         mostrar_menu()
-        opcion = input("Seleccione una opción (1-5): ")
+        opcion = input("Seleccione una opción (0-5): ")
 
         if opcion == "0":
-            # Usamos la misma lista de rutas que definiste para el entrenamiento
             guardar_matrices_a_texto(rutas_entrenamiento)
-            input("\nPresione Enter para volver al menú...")
-
+            input("\nPresione Enter para volver...")
         elif opcion == "1":
-            ejecutar_heteroasociativa_max(rutas_entrenamiento, rutas_con_ruido, clases_pokemon)
-            input("\nPresione Enter para volver al menú...")
-        
+            ejecutar_heteroasociativa_max(rutas_entrenamiento, rutas_con_ruido, clases_pokes)
+            input("\nPresione Enter para volver...")
         elif opcion == "2":
-            ejecutar_heteroasociativa_min(rutas_entrenamiento, rutas_con_ruido, clases_pokemon)
-            input("\nPresione Enter para volver al menú...")
-            
+            ejecutar_heteroasociativa_min(rutas_entrenamiento, rutas_con_ruido, clases_pokes)
+            input("\nPresione Enter para volver...")
         elif opcion == "3":
             ejecutar_autoasociativa_max(rutas_entrenamiento, rutas_con_ruido)
-            input("\nPresione Enter para volver al menú...")
-            
+            input("\nPresione Enter para volver...")
         elif opcion == "4":
             ejecutar_autoasociativa_min(rutas_entrenamiento, rutas_con_ruido)
-            input("\nPresione Enter para volver al menú...")
-            
+            input("\nPresione Enter para volver...")
         elif opcion == "5":
             print("\nSaliendo del programa...")
-            sys.exit() # Sale directamente sin confirmación
-            
-        else:
-            print("\nOpción no válida. Intente de nuevo.")
-            input("Presione Enter para continuar...")
+            sys.exit()
 
-# --- PUNTO DE ENTRADA DEL PROGRAMA ---
 if __name__ == "__main__":
-    ejecutar_programa()
+    main()
