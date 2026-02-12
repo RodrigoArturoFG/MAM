@@ -3,15 +3,18 @@ from PIL import Image
 import os
 import sys
 
-# Preprocesamiento de imagenes: Carga, Inversión y Aplanado
+# --- CARGA DE IMÁGENES (Normalización por Media) ---
 def cargar_imagenes_a_matriz(rutas_imagenes):
     datos_aplanados = []
     shape_original = None
     for ruta in rutas_imagenes:
         with Image.open(ruta).convert('L') as img:
             arr = np.array(img, dtype=np.int32)
-            # Invertimos: El Pokémon debe ser 255 (fuerte) y el fondo 0 (débil)
-            arr = 255 - arr 
+            # 1. INVERSIÓN: Pokémon Blanco (255), Fondo Negro (0)
+            arr = 255 - arr
+            # 2. MEDIA: Restamos la media para eliminar el sesgo del fondo
+            arr = arr - np.mean(arr) 
+            
             if shape_original is None: shape_original = arr.shape
             datos_aplanados.append(arr.flatten())
     return np.array(datos_aplanados), shape_original
@@ -33,18 +36,12 @@ def aprendizaje_max(X, Y):
     return W
 """
 
-# --- CORRECCIÓN DE APRENDIZAJE MAX ---
+# --- APRENDIZAJE (Valores Neutros Absolutos) ---
 def aprendizaje_max(X, Y):
-    """
-    X: Matriz de entrada (p patrones x n pixeles)
-    Y: Matriz de salida (p patrones x m pixeles o etiquetas)
-    """
     p, n = X.shape
-    m = Y.shape[1]
-    # Inicializamos con un valor que garantice que no haya saturación
-    W = np.full((m, n), -5000, dtype=np.int32)
+    m = Y.shape[1] # Número de clases o píxeles de salida
+    W = np.full((m, n), -1000000, dtype=np.int32) # Valor neutro extremo
     for mu in range(p):
-        # Y[mu] ahora tendrá valores extremos (ej. 255 y -255)
         diff = Y[mu].reshape(-1, 1) - X[mu].reshape(1, -1)
         W = np.maximum(W, diff)
     return W
@@ -59,24 +56,12 @@ def recuperacion_max(W, x_test):
     return y_salida
 """
 
-# --- RECUPERACIÓN OPTIMIZADA (Para evitar desbordes) ---
+# --- RECUPERACIÓN (Sin ajustes, álgebra pura) ---
 def recuperacion_max(W, x_test):
-    """
-    W: Matriz de memoria
-    x_test: Vector de imagen con ruido (aplanado)
-    """
-    m = W.shape[0] # Solo necesitamos el número de filas
-
-    # Forzamos x_test a int32 para que la suma con W no falle
+    m = W.shape[0]
     y_salida = np.zeros(m, dtype=np.int32)
-    x_test = x_test.flatten().astype(np.int32)
-    
     for i in range(m):
-        # Operación fundamental MAX: Max(W_ij + x_j)
         y_salida[i] = np.max(W[i, :] + x_test)
-    
-    # --- DIAGNÓSTICO ---
-    print(f"DEBUG MAX - Vector de salida: {y_salida}") 
     return y_salida
 
 # Memoría asociativa morfológica de tipo Min
@@ -98,15 +83,11 @@ def aprendizaje_min(X, Y):
     return M
 """
 
-# --- CORRECCIÓN DE APRENDIZAJE MIN ---
+# --- APRENDIZAJE (Valores Neutros Absolutos) ---
 def aprendizaje_min(X, Y):
-    """
-    X: Matriz de entrada (p patrones x n pixeles)
-    Y: Matriz de salida (p patrones x m pixeles o etiquetas)
-    """
     p, n = X.shape
     m = Y.shape[1]
-    M = np.full((m, n), 5000, dtype=np.int32)
+    M = np.full((m, n), 1000000, dtype=np.int32)
     for mu in range(p):
         diff = Y[mu].reshape(-1, 1) - X[mu].reshape(1, -1)
         M = np.minimum(M, diff)
@@ -123,23 +104,12 @@ def recuperacion_min(M, x_test):
     return y_salida
 """
 
-# --- RECUPERACIÓN OPTIMIZADA (Para evitar desbordes) ---
+# --- RECUPERACIÓN (Sin ajustes, álgebra pura) ---
 def recuperacion_min(M, x_test):
-    """
-    M: Matriz de memoria generada en el aprendizaje
-    x_test: Vector de imagen con ruido (aplanado)
-    """
     m = M.shape[0]
-
-    # Forzamos x_test a vector plano de enteros de 32 bits
     y_salida = np.zeros(m, dtype=np.int32)
-    x_test = x_test.flatten().astype(np.int32)
-    
     for i in range(m):
-        # Operación fundamental MIN: Min(M_ij + x_j)
         y_salida[i] = np.min(M[i, :] + x_test)
-        
-    print(f"DEBUG MIN - Vector de salida: {y_salida}") 
     return y_salida
 
 # Función para guardar resultados morfológicos como imágenes
@@ -176,94 +146,76 @@ def ejecutar_heteroasociativa_max(rutas_limpias, rutas_ruido, nombres_clases):
     
     X_limpias, _ = cargar_imagenes_a_matriz(rutas_limpias)
     num_clases = len(nombres_clases)
+
+    # ETIQUETAS: Usamos 1000 para la clase correcta y -1000 para las demás
+    Y_etiquetas = (np.eye(num_clases) * 2000) - 1000
+    W = aprendizaje_max(X_limpias, Y_etiquetas)
+    X_ruido, _ = cargar_imagenes_a_matriz(rutas_ruido)
+    for i, x_test in enumerate(X_ruido):
+        y_rec = recuperacion_max(W, x_test)
+        idx = np.argmax(y_rec)
+        print(f"DEBUG MAX - Vector: {y_rec}") # Debería mostrar valores distintos ahora
+        print(f"Ruido_{i} -> {nombres_clases[idx]}")
     
-    # ETIQUETAS BIPOLARES: 0 para la clase, 510 para las demás
-    # Esto evita que el fondo sature la memoria MIN
-    Y_etiquetas = (np.ones((num_clases, num_clases)) * 510) - (np.eye(num_clases) * 510)
+    
+
+def ejecutar_heteroasociativa_min(rutas_limpias, rutas_ruido, nombres_clases):
+    print("\n--- INICIANDO MAM HETEROASOCIATIVA MIN (Normalizada) ---")
+    
+    X_limpias, _ = cargar_imagenes_a_matriz(rutas_limpias)
+    num_clases = len(nombres_clases)
+    
+    # ETIQUETAS: Usamos -1000 para la clase correcta y 1000 para las demás
+    Y_etiquetas = 1000 - (np.eye(num_clases) * 2000)
     
     M = aprendizaje_min(X_limpias, Y_etiquetas)
     X_ruido, _ = cargar_imagenes_a_matriz(rutas_ruido)
     
     for i, x_test in enumerate(X_ruido):
         y_rec = recuperacion_min(M, x_test)
-        idx = np.argmin(y_rec) # OJO: En MIN buscamos el valor más pequeño
+        # IMPORTANTE: En MIN usamos ARGMIN porque buscamos el valor más pequeño
+        idx = np.argmin(y_rec)
+        print(f"DEBUG MIN - Vector: {y_rec}")
         print(f"Ruido_{i} -> {nombres_clases[idx]}")
-    
-    
-
-def ejecutar_heteroasociativa_min(rutas_limpias, rutas_ruido, nombres_clases):
-    """Clasificación con robustez a ruido aditivo (Sal/Blanco)"""
-    print("\n--- INICIANDO MAM HETEROASOCIATIVA MIN ---")
-    
-    # 1. Carga y Preparación
-    X_limpias, _ = cargar_imagenes_a_matriz(rutas_limpias)
-    num_clases = len(nombres_clases)
-    print(f"DEBUG - numero clases: {num_clases}")
-    Y_etiquetas = np.eye(num_clases) * 255
-    X_ruido, _ = cargar_imagenes_a_matriz(rutas_ruido)
-
-    # 2. Aprendizaje y Recuperación
-    M_hetero = aprendizaje_min(X_limpias, Y_etiquetas)
-    
-    print(f"{'Imagen':<15} | {'Predicción MIN'}")
-    print("-" * 35)
-    for i, x_test in enumerate(X_ruido):
-        y_rec = recuperacion_min(M_hetero, x_test)
-        idx = np.argmax(y_rec)
-        print(f"Ruido_{i:<10} | {nombres_clases[idx]}")
 
 
 # --- FUNCIONES DE SOPORTE AUTOASOCIATIVAS ---
 def ejecutar_autoasociativa_max(rutas_entrenamiento, rutas_con_ruido):
-    """Restauración de imagen con robustez a ruido sustractivo (Pimienta/Negro)"""
     print("\n--- INICIANDO MAM AUTOASOCIATIVA MAX ---")
     
-    # 1. Carga con Inversión (Pokémon Blanco, Fondo Negro)
     X_train, shape_original = cargar_imagenes_a_matriz(rutas_entrenamiento)
+    W_auto = aprendizaje_max(X_train, X_train)
     X_test_ruido, _ = cargar_imagenes_a_matriz(rutas_con_ruido)
 
-    # 2. Aprendizaje Autoasociativo (Y = X)
-    # Usamos el aprendizaje_max robusto que inicializa en -5000
-    W_auto = aprendizaje_max(X_train, X_train)
-
-    # 3. Recuperación y Guardado
     os.makedirs("Resultados/Autoasociativa_Max", exist_ok=True)
-    for i, x_con_ruido in enumerate(X_test_ruido):
-        y_rec = recuperacion_max(W_auto, x_con_ruido)
-        
-        # OJO: Como invertimos al cargar (255 - arr), 
-        # invertimos de nuevo al guardar para recuperar el fondo blanco original.
-        y_final = 255 - y_rec 
-        
-        guardar_resultado_morfo(
-            y_final, shape_original, f"restaurada_MAX_img_{i}.png", "Resultados/Autoasociativa_Max"
-        )
+    for i, x_test in enumerate(X_test_ruido):
+        y_rec = recuperacion_max(W_auto, x_test)
+        # 1. Deshacer media
+        y_final = y_rec + 127 
+        # 2. Invertir para que el reporte se vea con fondo blanco original
+        y_final = 255 - y_final 
+
+        guardar_resultado_morfo(y_final, shape_original, f"MAX_{i}.png", "Resultados/Autoasociativa_Max")
     print("Evidencias guardadas en: Resultados/Autoasociativa_Max")
 
 
 def ejecutar_autoasociativa_min(rutas_entrenamiento, rutas_con_ruido):
-    """Limpieza de imagen con robustez a ruido aditivo (Sal/Blanco)"""
-    print("\n--- INICIANDO MAM AUTOASOCIATIVA MIN ---")
-    
-# 1. Carga con Inversión
+    print("\n--- INICIANDO MAM AUTOASOCIATIVA MIN (Normalizada) ---")
     X_train, shape_original = cargar_imagenes_a_matriz(rutas_entrenamiento)
-    X_test_ruido, _ = cargar_imagenes_a_matriz(rutas_con_ruido)
-
-    # 2. Aprendizaje Autoasociativo (Y = X)
-    # Usamos el aprendizaje_min robusto que inicializa en 5000
+    
+    # Aprendizaje MIN (Y = X) con inicialización en 1,000,000
     M_auto = aprendizaje_min(X_train, X_train)
-
-    # 3. Recuperación y Guardado
+    
+    X_test_ruido, _ = cargar_imagenes_a_matriz(rutas_con_ruido)
     os.makedirs("Resultados/Autoasociativa_Min", exist_ok=True)
-    for i, x_con_ruido in enumerate(X_test_ruido):
-        y_rec = recuperacion_min(M_auto, x_con_ruido)
-        
-        # Re-invertimos para fondo blanco
-        y_final = 255 - y_rec
-        
-        guardar_resultado_morfo(
-            y_final, shape_original, f"restaurada_MIN_img_{i}.png", "Resultados/Autoasociativa_Min"
-        )
+    
+    for i, x_test in enumerate(X_test_ruido):
+        y_rec = recuperacion_min(M_auto, x_test)
+        # 1. Deshacer media
+        y_final = y_rec + 127 
+        # 2. Invertir para que el reporte se vea con fondo blanco original
+        y_final = 255 - y_final 
+        guardar_resultado_morfo(y_final, shape_original, f"MIN_{i}.png", "Resultados/Autoasociativa_Min")
     print("Evidencias guardadas en: Resultados/Autoasociativa_Min")
 
 
@@ -283,8 +235,8 @@ def guardar_matrices_a_texto(rutas_imagenes):
         with Image.open(ruta).convert('L') as img:
 
             arr = np.array(img, dtype=np.int32)
-            # Invertimos: El Pokémon debe ser 255 (fuerte) y el fondo 0 (débil)
-            arr = 255 - arr 
+            # NORMALIZACIÓN: Restamos la media de la imagen para que el fondo no sature
+            arr = arr - np.mean(arr) 
                 
             matriz = arr.astype(np.int32)
             nombre_base = os.path.basename(ruta).replace(".bmp", "").replace(".png", "")
