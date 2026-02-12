@@ -11,12 +11,10 @@ def cargar_imagenes_a_matriz(rutas_imagenes):
     for ruta in rutas_imagenes:
         with Image.open(ruta).convert('L') as img:
             arr = np.array(img, dtype=np.int32)
-            
-            # --- INVERSIÓN PARA MAM (Fondo negro, Objeto blanco) ---
-            # Si el fondo es blanco (255), lo invertimos para que el 
-            # Pokémon sea el valor alto (255) y la memoria pueda "aprenderlo".
-            arr = 255 - arr 
-            # -------------------------------------------------------
+            # 1. Inversión (Objeto blanco, fondo negro)
+            arr = 255 - arr
+            # 2. Traslación a media cero para evitar saturación (Crucial)
+            arr = arr - 127 
             
             if shape_original is None:
                 shape_original = arr.shape
@@ -76,17 +74,18 @@ def recuperacion_max(W, x_test):
     W: Matriz de memoria
     x_test: Vector de imagen con ruido (aplanado)
     """
-    m, n = W.shape
-    y_salida = np.zeros(m)
+    m = W.shape[0] # Solo necesitamos el número de filas
+
     # Forzamos x_test a int32 para que la suma con W no falle
+    y_salida = np.zeros(m, dtype=np.int32)
     x_test = x_test.flatten().astype(np.int32)
     
     for i in range(m):
+        # Operación fundamental MAX: Max(W_ij + x_j)
         y_salida[i] = np.max(W[i, :] + x_test)
     
     # --- DIAGNÓSTICO ---
-    # Esto te dirá qué valores numéricos está viendo el Argmax
-    print(f"DEBUG - Vector de salida: {y_salida}") 
+    print(f"DEBUG MAX - Vector de salida: {y_salida}") 
     return y_salida
 
 # Memoría asociativa morfológica de tipo Min
@@ -142,47 +141,35 @@ def recuperacion_min(M, x_test):
     M: Matriz de memoria generada en el aprendizaje
     x_test: Vector de imagen con ruido (aplanado)
     """
-    m, n = M.shape
-    y_salida = np.zeros(m, dtype=np.int32)
-    
+    m = M.shape[0]
+
     # Forzamos x_test a vector plano de enteros de 32 bits
+    y_salida = np.zeros(m, dtype=np.int32)
     x_test = x_test.flatten().astype(np.int32)
     
     for i in range(m):
         # Operación fundamental MIN: Min(M_ij + x_j)
         y_salida[i] = np.min(M[i, :] + x_test)
         
-    # --- DIAGNÓSTICO (Opcional) ---
     print(f"DEBUG MIN - Vector de salida: {y_salida}") 
     return y_salida
 
 # Función para guardar resultados morfológicos como imágenes
 def guardar_resultado_morfo(y_vector, shape_original, nombre_archivo, carpeta_destino="resultados"):
-    """
-    Convierte un vector de salida de la MAM en imagen y la guarda en una ruta relativa.
-    
-    y_vector: El vector (1D) resultante de la fase de recuperación.
-    shape_original: Tupla (alto, ancho) de la imagen, ej: (50, 50).
-    nombre_archivo: Nombre del archivo de salida (ej: "pikachu_recuperado.png").
-    carpeta_destino: Carpeta donde se guardará el resultado.
-    """
     
     # 1. Crear la carpeta si no existe
     if not os.path.exists(carpeta_destino):
         os.makedirs(carpeta_destino)
 
-    """
-    # Variante para reconstruir la imagen normalizando el vector (opcional, dependiendo de la escala de valores):
-    # Normalizamos el vector al rango [0, 255] para visualizarlo como imagen
-    vector_normalizado = 255 * (y_vector - np.min(y_vector)) / (np.ptp(y_vector) + 1e-5)
-    imagen_array = vector_normalizado.reshape(shape_original).astype(np.uint8)
-    """
-    
     # En este caso, asumimos que el vector ya está en el rango adecuado (0-255) después de las operaciones morfológicas.
     # 2. Reconstruir la forma de la imagen (Reshape de 1D a 2D)
     # Importante: Aplicamos clip(0, 255) por si las sumas morfológicas 
     # generaron valores fuera del rango de color estándar.
     imagen_array = y_vector.reshape(shape_original)
+    # 1. Deshacer la traslación de media cero
+    imagen_array = imagen_array + 127
+    # 2. Re-invertir si quieres el fondo blanco original
+    imagen_array = 255 - imagen_array
     imagen_array = np.clip(imagen_array, 0, 255).astype(np.uint8)
     
     # 3. Crear el objeto de imagen desde el array de Numpy
@@ -295,12 +282,10 @@ def guardar_matrices_a_texto(rutas_imagenes):
     for ruta in rutas_imagenes:
         with Image.open(ruta).convert('L') as img:
             arr = np.array(img, dtype=np.int32)
-            
-            # --- INVERSIÓN PARA MAM (Fondo negro, Objeto blanco) ---
-            # Si el fondo es blanco (255), lo invertimos para que el 
-            # Pokémon sea el valor alto (255) y la memoria pueda "aprenderlo".
-            arr = 255 - arr 
-            # -------------------------------------------------------
+            # 1. Inversión (Objeto blanco, fondo negro)
+            arr = 255 - arr
+            # 2. Traslación a media cero para evitar saturación (Crucial)
+            arr = arr - 127 
                 
             matriz = arr.astype(np.int32)
             nombre_base = os.path.basename(ruta).replace(".bmp", "").replace(".png", "")
