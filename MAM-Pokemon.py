@@ -53,9 +53,9 @@ def aprendizaje_max(X, Y):
     p, n = X.shape
     m = Y.shape[1]
     # INICIALIZACIÓN CRUCIAL: Debe ser un valor muy pequeño
-    # Inicializamos con un valor menor al mínimo posible (-255)
+    # Usamos un valor MUY bajo para que cualquier resta Y-X sea mayor
     # Usamos un valor numérico seguro en lugar de -inf
-    W = np.full((m, n), -500) 
+    W = np.full((m, n), -2000, dtype=np.int32) 
     
     for mu in range(p):
         # Diferencia: vector_columna(Y) - vector_fila(X)
@@ -79,12 +79,17 @@ def recuperacion_max(W, x_test):
     W: Matriz de memoria
     x_test: Vector de imagen con ruido (aplanado)
     """
-    # Forzamos x_test a int32 para que la suma con W no falle
-    x_test = np.array(x_test, dtype=np.int32)
     m, n = W.shape
     y_salida = np.zeros(m)
+    # Forzamos x_test a int32 para que la suma con W no falle
+    x_test = x_test.flatten().astype(np.int32)
+    
     for i in range(m):
         y_salida[i] = np.max(W[i, :] + x_test)
+    
+    # --- DIAGNÓSTICO ---
+    # Esto te dirá qué valores numéricos está viendo el Argmax
+    print(f"DEBUG - Vector de salida: {y_salida}") 
     return y_salida
 
 # Memoría asociativa morfológica de tipo Min
@@ -115,8 +120,8 @@ def aprendizaje_min(X, Y):
     p, n = X.shape
     m = Y.shape[1]
     # INICIALIZACIÓN CRUCIAL: Debe ser un valor muy grande
-    # Inicializamos con un valor mayor al máximo posible (255)
-    M = np.full((m, n), 500) 
+    # Inicializamos con un valor mayor al máximo posible (2000 es seguro para evitar desbordes)
+    M = np.full((m, n), 2000, dtype=np.int32)
     
     for mu in range(p):
         diferencia = Y[mu].reshape(-1, 1) - X[mu].reshape(1, -1)
@@ -140,12 +145,18 @@ def recuperacion_min(M, x_test):
     M: Matriz de memoria generada en el aprendizaje
     x_test: Vector de imagen con ruido (aplanado)
     """
-    # Forzamos x_test a int32 para que la suma con M no falle
-    x_test = np.array(x_test, dtype=np.int32)
     m, n = M.shape
-    y_salida = np.zeros(m)
+    y_salida = np.zeros(m, dtype=np.int32)
+    
+    # Forzamos x_test a vector plano de enteros de 32 bits
+    x_test = x_test.flatten().astype(np.int32)
+    
     for i in range(m):
+        # Operación fundamental MIN: Min(M_ij + x_j)
         y_salida[i] = np.min(M[i, :] + x_test)
+        
+    # --- DIAGNÓSTICO (Opcional) ---
+    print(f"DEBUG MIN - Vector de salida: {y_salida}") 
     return y_salida
 
 # Función para guardar resultados morfológicos como imágenes
@@ -194,6 +205,7 @@ def ejecutar_heteroasociativa_max(rutas_limpias, rutas_ruido, nombres_clases):
     # 1. Carga y Preparación
     X_limpias, _ = cargar_imagenes_a_matriz(rutas_limpias)
     num_clases = len(nombres_clases)
+    print(f"DEBUG - numero clases: {num_clases}")
     Y_etiquetas = np.eye(num_clases) * 255
     X_ruido, _ = cargar_imagenes_a_matriz(rutas_ruido)
 
@@ -214,6 +226,7 @@ def ejecutar_heteroasociativa_min(rutas_limpias, rutas_ruido, nombres_clases):
     # 1. Carga y Preparación
     X_limpias, _ = cargar_imagenes_a_matriz(rutas_limpias)
     num_clases = len(nombres_clases)
+    print(f"DEBUG - numero clases: {num_clases}")
     Y_etiquetas = np.eye(num_clases) * 255
     X_ruido, _ = cargar_imagenes_a_matriz(rutas_ruido)
 
