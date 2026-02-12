@@ -3,29 +3,26 @@ from PIL import Image
 import os
 import sys
 
-# Preprocesamiento de imagenes
+# Preprocesamiento de imagenes: Carga, Inversión y Aplanado
 def cargar_imagenes_a_matriz(rutas_imagenes):
     datos_aplanados = []
     shape_original = None
     
     for ruta in rutas_imagenes:
         with Image.open(ruta).convert('L') as img:
-            arr = np.array(img)
+            arr = np.array(img, dtype=np.int32)
             
-            # --- VALIDACIÓN CRÍTICA ---
-            # Si el valor máximo es 1 (imagen binaria 0/1), lo escalamos a 0/255
-            if arr.max() <= 1:
-                arr = arr * 255
-            
-            # Aseguramos que sea int32 para las restas del aprendizaje
-            arr = arr.astype(np.int32)
+            # --- INVERSIÓN PARA MAM (Fondo negro, Objeto blanco) ---
+            # Si el fondo es blanco (255), lo invertimos para que el 
+            # Pokémon sea el valor alto (255) y la memoria pueda "aprenderlo".
+            arr = 255 - arr 
+            # -------------------------------------------------------
             
             if shape_original is None:
                 shape_original = arr.shape
             datos_aplanados.append(arr.flatten())
             
     return np.array(datos_aplanados), shape_original
-
 
 # Memoría asociativa morfológica de tipo Max
 """
