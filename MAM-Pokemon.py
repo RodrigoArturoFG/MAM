@@ -271,36 +271,38 @@ def ejecutar_autoasociativa_min(rutas_entrenamiento, rutas_con_ruido):
 
 
 # --- FUNCIONES DE SOPORTE PARA EXPORTAR MATRICES A TEXTO ---
-def guardar_matrices_a_texto(rutas_entrenamiento):
+def guardar_matrices_a_texto(rutas_imagenes):
     """
-    Carga imágenes, las convierte a matrices 2D de 0-255 y las guarda en archivos .txt
+    Exporta las imágenes de entrenamiento a archivos .txt para validar 
+    que los valores de los píxeles estén en el rango real (0-255).
     """
-    # 1. Crear la carpeta si no existe
+    print("\n--- EXPORTANDO MATRICES DE DIAGNÓSTICO (Rango 0-255) ---")
     carpeta_destino="Imagenes-Matriz"
     if not os.path.exists(carpeta_destino):
         os.makedirs(carpeta_destino)
-        print(f"Carpeta creada: {carpeta_destino}")
 
-    for ruta in rutas_entrenamiento:
+    for ruta in rutas_imagenes:
         try:
-            # 2. Abrir imagen y asegurar escala de grises (L)
+            # 1. Abrir y forzar escala de grises
             with Image.open(ruta).convert('L') as img:
-                # Convertimos a array de numpy (Valores 0-255)
-                matriz = np.array(img)
+                # 2. Forzamos int32 para evitar cualquier normalización automática de float
+                matriz = np.array(img, dtype=np.int32)
                 
-                # 3. Generar nombre del archivo .txt basado en la imagen original
-                nombre_base = os.path.basename(ruta).split('.')[0]
+                # 3. Extraer nombre limpio del Pokémon
+                nombre_base = os.path.basename(ruta).replace(".bmp", "").replace(".png", "")
                 nombre_txt = f"{nombre_base}_matriz.txt"
                 ruta_txt = os.path.join(carpeta_destino, nombre_txt).replace("\\", "/")
                 
-                # 4. Guardar la matriz con formato legible (enteros)
-                # fmt='%d' asegura que se guarden como enteros (0, 255) y no decimales
+                # 4. Guardar con formato de entero (%d) y delimitador claro
+                # Si la matriz es 2D (50x50), se guardará tal cual para fácil lectura
                 np.savetxt(ruta_txt, matriz, fmt='%d', delimiter='\t')
                 
-                print(f"Matriz exportada exitosamente: {ruta_txt}")
+                print(f"Matriz de {nombre_base} guardada en: {ruta_txt}")
                 
         except Exception as e:
             print(f"Error al procesar {ruta}: {e}")
+            
+    print("-" * 50)
 
 
 # --- INTERFAZ DE USUARIO EN CONSOLA ---
