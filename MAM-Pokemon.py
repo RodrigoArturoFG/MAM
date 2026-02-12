@@ -8,7 +8,34 @@ import sys
 # ====================================================
 
 def aprendizaje_max(X, Y):
-    """Construcción de la matriz W usando suma-máxima (Supremo)"""
+    p, n = X.shape
+    m = Y.shape[1] if len(Y.shape) > 1 else Y.shape[0]
+    W = np.full((m, n), -10, dtype=np.int32)
+    for mu in range(p):
+        diff = Y[mu].reshape(-1, 1) - X[mu].reshape(1, -1)
+        W = np.maximum(W, diff)
+    return W
+
+def aprendizaje_min(X, Y):
+    p, n = X.shape
+    m = Y.shape[1] if len(Y.shape) > 1 else Y.shape[0]
+    M = np.full((m, n), 10, dtype=np.int32)
+    for mu in range(p):
+        diff = Y[mu].reshape(-1, 1) - X[mu].reshape(1, -1)
+        M = np.minimum(M, diff)
+    return M
+
+def recuperacion_max(W, x_test):
+    # Producto morfológico optimizado: y = max(W + x)
+    return np.max(W + x_test.reshape(1, -1), axis=1)
+
+def recuperacion_min(M, x_test):
+    # Producto morfológico optimizado: y = min(M + x)
+    return np.min(M + x_test.reshape(1, -1), axis=1)
+
+"""
+def aprendizaje_max(X, Y):
+    # Construcción de la matriz W usando suma-máxima (Supremo)
     p, n = X.shape
     m = Y.shape[1]
     # Inicializamos con un valor neutro inferior (épsilon)
@@ -20,7 +47,7 @@ def aprendizaje_max(X, Y):
     return W
 
 def aprendizaje_min(X, Y):
-    """Construcción de la matriz M usando suma-mínima (Ínfimo)"""
+    # Construcción de la matriz M usando suma-mínima (Ínfimo)
     p, n = X.shape
     m = Y.shape[1]
     # Inicializamos con un valor neutro superior
@@ -29,9 +56,11 @@ def aprendizaje_min(X, Y):
         diff = Y[mu].reshape(-1, 1) - X[mu].reshape(1, -1)
         M = np.minimum(M, diff)
     return M
+"""
 
+"""
 def recuperacion_max(W, x_test):
-    """Inferencia Morfológica Superior: y = W ⊠ x"""
+    # Inferencia Morfológica Superior: y = W ⊠ x
     m = W.shape[0]
     y_salida = np.zeros(m, dtype=np.int32)
     x_test = x_test.flatten().astype(np.int32)
@@ -40,42 +69,54 @@ def recuperacion_max(W, x_test):
     return y_salida
 
 def recuperacion_min(M, x_test):
-    """Inferencia Morfológica Inferior: y = M ⊞ x"""
+    # Inferencia Morfológica Inferior: y = M ⊞ x
     m = M.shape[0]
     y_salida = np.zeros(m, dtype=np.int32)
     x_test = x_test.flatten().astype(np.int32)
     for i in range(m):
         y_salida[i] = np.min(M[i, :] + x_test)
     return y_salida
+"""
 
 # ====================================================
 #   CARGA, GUARDADO Y DIAGNÓSTICO
 # ====================================================
 
 def cargar_imagenes_a_matriz(rutas_imagenes):
-    """Carga imágenes BMP y las binariza (Pokémon=1, Fondo=0)"""
     datos = []
     shape_original = None
     for ruta in rutas_imagenes:
-        if not os.path.exists(ruta):
-            print(f"Error: No existe {ruta}")
-            continue
         with Image.open(ruta).convert('L') as img:
             arr = np.array(img)
-            # TRANSFORMACIÓN: Silueta (Negro < 128) -> 1, Fondo (Blanco >= 128) -> 0
-            # Según la literatura, el objeto de interés debe ser el valor alto (señal)
-            arr_bin = np.where(arr < 128, 1, 0).astype(np.int32)
-            if shape_original is None: shape_original = arr_bin.shape
-            datos.append(arr_bin.flatten())
+            # BIPOLAR: Pokémon (Negro) -> 1, Fondo (Blanco) -> -1
+            # Esto es lo que recomienda Ritter para patrones muy parecidos
+            arr_bipolar = np.where(arr < 128, 1, -1).astype(np.int32)
+            if shape_original is None: shape_original = arr_bipolar.shape
+            datos.append(arr_bipolar.flatten())
     return np.array(datos), shape_original
 
+
 def guardar_resultado_morfo(y_vector, shape_original, nombre_archivo, carpeta_destino):
-    """Reconstruye la imagen (1 -> Negro, 0 -> Blanco)"""
+    if not os.path.exists(carpeta_destino): os.makedirs(carpeta_destino)
+    res = y_vector.reshape(shape_original)
+    
+    # Lógica de decisión bipolar:
+    # Si el valor recuperado es positivo, el píxel pertenece al Pokémon.
+    res_img = np.where(res > 0, 0, 255).astype(np.uint8)
+    
+    ruta_final = os.path.join(carpeta_destino, nombre_archivo).replace("\\", "/")
+    Image.fromarray(res_img).save(ruta_final)
+    print(f"Imagen guardada: {ruta_final}")
+
+"""
+def guardar_resultado_morfo(y_vector, shape_original, nombre_archivo, carpeta_destino):
+    # Reconstruye la imagen (1 -> Negro, 0 -> Blanco)
     if not os.path.exists(carpeta_destino): os.makedirs(carpeta_destino)
     res = y_vector.reshape(shape_original)
     # Invertimos la binarización para el reporte visual (Fondo Blanco 255)
     res_img = np.where(res >= 1, 0, 255).astype(np.uint8)
     Image.fromarray(res_img).save(os.path.join(carpeta_destino, nombre_archivo))
+"""
 
 def guardar_matrices_a_texto(rutas_imagenes, carpeta_destino="Imagenes-Matriz"):
     """Diagnóstico de 0s y 1s"""
@@ -93,56 +134,84 @@ def guardar_matrices_a_texto(rutas_imagenes, carpeta_destino="Imagenes-Matriz"):
 # ====================================================
 
 def ejecutar_heteroasociativa_max(rutas_l, rutas_r, clases):
-    print("\n--- MAM HETEROASOCIATIVA MAX (Clasificación) ---")
     X, _ = cargar_imagenes_a_matriz(rutas_l)
-    Y = np.eye(len(clases), dtype=np.int32) # One-Hot: 1 para la clase, 0 resto
+    # ETIQUETAS BIPOLARES: 1 para la clase, -1 para las demás
+    Y = (np.eye(len(clases), dtype=np.int32) * 2) - 1
     W = aprendizaje_max(X, Y)
     X_r, _ = cargar_imagenes_a_matriz(rutas_r)
     
-    print(f"{'Imagen':<12} | {'Predicción MAX'}")
-    print("-" * 35)
     for i, x in enumerate(X_r):
         y_r = recuperacion_max(W, x)
-        idx = np.argmax(y_r)
         print(f"DEBUG MAX - Vector: {y_r}")
-        print(f"Ruido_{i:<7} | {clases[idx]}")
+        print(f"Ruido_{i} -> {clases[np.argmax(y_r)]}")
 
 def ejecutar_heteroasociativa_min(rutas_l, rutas_r, clases):
-    print("\n--- MAM HETEROASOCIATIVA MIN (Clasificación) ---")
     X, _ = cargar_imagenes_a_matriz(rutas_l)
-    # Para MIN, usamos etiquetas invertidas si es necesario, 
-    # pero el One-Hot estándar funciona con argmin/argmax según el contraste.
-    Y = np.eye(len(clases), dtype=np.int32)
+    # ETIQUETAS BIPOLARES PARA MIN: -1 para la clase, 1 para las demás
+    Y = 1 - (np.eye(len(clases), dtype=np.int32) * 2)
     M = aprendizaje_min(X, Y)
     X_r, _ = cargar_imagenes_a_matriz(rutas_r)
     
-    print(f"{'Imagen':<12} | {'Predicción MIN'}")
-    print("-" * 35)
     for i, x in enumerate(X_r):
         y_r = recuperacion_min(M, x)
-        idx = np.argmax(y_r) # Usamos argmax por el contraste 0/1
         print(f"DEBUG MIN - Vector: {y_r}")
-        print(f"Ruido_{i:<7} | {clases[idx]}")
+        # En MIN, el valor más PEQUEÑO identifica la clase
+        print(f"Ruido_{i} -> {clases[np.argmin(y_r)]}")
 
 def ejecutar_autoasociativa_max(rutas_l, rutas_r):
-    print("\n--- MAM AUTOASOCIATIVA MAX (Restauración) ---")
+    """Restauración: Robusta a ruido sustractivo (Puntos negros)"""
+    print("\n--- INICIANDO MAM AUTOASOCIATIVA MAX (Bipolar) ---")
+    
+    # 1. Carga Bipolar (Pokémon 1, Fondo -1)
     X, shape = cargar_imagenes_a_matriz(rutas_l)
-    W = aprendizaje_max(X, X)
     X_r, _ = cargar_imagenes_a_matriz(rutas_r)
-    for i, x in enumerate(X_r):
-        y_r = recuperacion_max(W, x)
-        guardar_resultado_morfo(y_r, shape, f"MAX_{i}.png", "Resultados/Autoasociativa_Max")
-    print("Resultados en Resultados/Autoasociativa_Max")
+
+    # 2. Aprendizaje Autoasociativo (Y = X)
+    # Matriz cuadrada de (2500, 2500)
+    W_auto = aprendizaje_max(X, X)
+
+    # 3. Recuperación Matricial Optimizada
+    os.makedirs("Resultados/Autoasociativa_Max", exist_ok=True)
+    for i, x_con_ruido in enumerate(X_r):
+        # Producto morfológico veloz: max(W + x)
+        y_r = recuperacion_max(W_auto, x_con_ruido)
+        
+        # 4. RECONSTRUCCIÓN VISUAL:
+        # En lógica bipolar, valores > 0 son Pokémon (Negro: 0)
+        # Valores <= 0 son Fondo (Blanco: 255)
+        guardar_resultado_morfo(
+            y_r, 
+            shape, 
+            f"restaurada_MAX_img_{i}.png", 
+            "Resultados/Autoasociativa_Max"
+        )
+    print("Evidencias guardadas en: Resultados/Autoasociativa_Max")
 
 def ejecutar_autoasociativa_min(rutas_l, rutas_r):
-    print("\n--- MAM AUTOASOCIATIVA MIN (Limpieza) ---")
+    """Limpieza: Robusta a ruido aditivo (Manchas blancas)"""
+    print("\n--- INICIANDO MAM AUTOASOCIATIVA MIN (Bipolar) ---")
+    
+    # 1. Carga Bipolar
     X, shape = cargar_imagenes_a_matriz(rutas_l)
-    M = aprendizaje_min(X, X)
     X_r, _ = cargar_imagenes_a_matriz(rutas_r)
-    for i, x in enumerate(X_r):
-        y_r = recuperacion_min(M, x)
-        guardar_resultado_morfo(y_r, shape, f"MIN_{i}.png", "Resultados/Autoasociativa_Min")
-    print("Resultados en Resultados/Autoasociativa_Min")
+
+    # 2. Aprendizaje Autoasociativo (Y = X)
+    M_auto = aprendizaje_min(X, X)
+
+    # 3. Recuperación Matricial Optimizada
+    os.makedirs("Resultados/Autoasociativa_Min", exist_ok=True)
+    for i, x_con_ruido in enumerate(X_r):
+        # Producto morfológico veloz: min(M + x)
+        y_r = recuperacion_min(M_auto, x_con_ruido)
+        
+        # Reconstrucción visual idéntica
+        guardar_resultado_morfo(
+            y_r, 
+            shape, 
+            f"restaurada_MIN_img_{i}.png", 
+            "Resultados/Autoasociativa_Min"
+        )
+    print("Evidencias guardadas en: Resultados/Autoasociativa_Min")
     
 # ====================================================
 #   INTERFAZ DE USUARIO Y MENÚ
