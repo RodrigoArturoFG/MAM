@@ -5,23 +5,23 @@ import sys
 
 # Preprocesamiento de imagenes
 def cargar_imagenes_a_matriz(rutas_imagenes):
-    """
-    Carga imágenes desde una lista de rutas, las convierte a escala de grises,
-    las aplana (vector) y guarda sus dimensiones originales.
-    """
     datos_aplanados = []
     shape_original = None
     
     for ruta in rutas_imagenes:
-        if not os.path.exists(ruta):
-            print(f"Error: No se encontró la imagen en {ruta}")
-            continue
-            
         with Image.open(ruta).convert('L') as img:
-            # IMPORTANTE: No usar float aquí para evitar normalización a 0-1
-            arr = np.array(img, dtype=np.int32) 
+            arr = np.array(img)
+            
+            # --- VALIDACIÓN CRÍTICA ---
+            # Si el valor máximo es 1 (imagen binaria 0/1), lo escalamos a 0/255
+            if arr.max() <= 1:
+                arr = arr * 255
+            
+            # Aseguramos que sea int32 para las restas del aprendizaje
+            arr = arr.astype(np.int32)
+            
             if shape_original is None:
-                shape_original = arr.shape # Guarda (alto, ancho) de la primera imagen
+                shape_original = arr.shape
             datos_aplanados.append(arr.flatten())
             
     return np.array(datos_aplanados), shape_original
@@ -270,40 +270,34 @@ def ejecutar_autoasociativa_min(rutas_entrenamiento, rutas_con_ruido):
     print("Imágenes restauradas guardadas en: Resultados\Autoasociativa_Min")
 
 
-# --- FUNCIONES DE SOPORTE PARA EXPORTAR MATRICES A TEXTO ---
+# --- FUNCION DE SOPORTE PARA EXPORTAR MATRICES A TEXTO ---
 def guardar_matrices_a_texto(rutas_imagenes):
     """
     Exporta las imágenes de entrenamiento a archivos .txt para validar 
     que los valores de los píxeles estén en el rango real (0-255).
     """
     print("\n--- EXPORTANDO MATRICES DE DIAGNÓSTICO (Rango 0-255) ---")
+
     carpeta_destino="Imagenes-Matriz"
     if not os.path.exists(carpeta_destino):
         os.makedirs(carpeta_destino)
 
     for ruta in rutas_imagenes:
-        try:
-            # 1. Abrir y forzar escala de grises
-            with Image.open(ruta).convert('L') as img:
-                # 2. Forzamos int32 para evitar cualquier normalización automática de float
-                matriz = np.array(img, dtype=np.int32)
-                
-                # 3. Extraer nombre limpio del Pokémon
-                nombre_base = os.path.basename(ruta).replace(".bmp", "").replace(".png", "")
-                nombre_txt = f"{nombre_base}_matriz.txt"
-                ruta_txt = os.path.join(carpeta_destino, nombre_txt).replace("\\", "/")
-                
-                # 4. Guardar con formato de entero (%d) y delimitador claro
-                # Si la matriz es 2D (50x50), se guardará tal cual para fácil lectura
-                np.savetxt(ruta_txt, matriz, fmt='%d', delimiter='\t')
-                
-                print(f"Matriz de {nombre_base} guardada en: {ruta_txt}")
-                
-        except Exception as e:
-            print(f"Error al procesar {ruta}: {e}")
+        with Image.open(ruta).convert('L') as img:
+            arr = np.array(img)
             
-    print("-" * 50)
-
+            # Aplicamos la misma lógica de corrección que en la carga
+            if arr.max() <= 1:
+                arr = arr * 255
+                
+            matriz = arr.astype(np.int32)
+            nombre_base = os.path.basename(ruta).replace(".bmp", "").replace(".png", "")
+            ruta_txt = os.path.join(carpeta_destino, f"{nombre_base}_matriz.txt")
+            
+            # Guardamos con un pequeño cambio para que Git lo note
+            # Usaremos un delimitador de coma para forzar el cambio de archivo
+            np.savetxt(ruta_txt, matriz, fmt='%d', delimiter=',') 
+            print(f"Diagnóstico forzado: {ruta_txt}")
 
 # --- INTERFAZ DE USUARIO EN CONSOLA ---
 
