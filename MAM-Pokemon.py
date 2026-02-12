@@ -13,13 +13,19 @@ def cargar_imagenes_a_matriz(rutas_imagenes):
     shape_original = None
     
     for ruta in rutas_imagenes:
+        if not os.path.exists(ruta):
+            print(f"Error: No se encontró la imagen en {ruta}")
+            continue
+            
         with Image.open(ruta).convert('L') as img:
-            arr = np.array(img)
+            # IMPORTANTE: No usar float aquí para evitar normalización a 0-1
+            arr = np.array(img, dtype=np.int32) 
             if shape_original is None:
-                shape_original = arr.shape  # Guarda (alto, ancho) de la primera imagen
+                shape_original = arr.shape # Guarda (alto, ancho) de la primera imagen
             datos_aplanados.append(arr.flatten())
             
     return np.array(datos_aplanados), shape_original
+
 
 # Memoría asociativa morfológica de tipo Max
 """
@@ -47,10 +53,12 @@ def aprendizaje_max(X, Y):
     p, n = X.shape
     m = Y.shape[1]
     # INICIALIZACIÓN CRUCIAL: Debe ser un valor muy pequeño
-    W = np.full((m, n), -1000.0) # Usamos un valor numérico seguro en lugar de -inf
+    # Inicializamos con un valor menor al mínimo posible (-255)
+    # Usamos un valor numérico seguro en lugar de -inf
+    W = np.full((m, n), -500) 
     
     for mu in range(p):
-        # Diferencia externa: columna(Y) - fila(X)
+        # Diferencia: vector_columna(Y) - vector_fila(X)
         diferencia = Y[mu].reshape(-1, 1) - X[mu].reshape(1, -1)
         W = np.maximum(W, diferencia)
     return W
@@ -71,11 +79,13 @@ def recuperacion_max(W, x_test):
     W: Matriz de memoria
     x_test: Vector de imagen con ruido (aplanado)
     """
+    # Forzamos x_test a int32 para que la suma con W no falle
+    x_test = np.array(x_test, dtype=np.int32)
     m, n = W.shape
-    y = np.zeros(m)
+    y_salida = np.zeros(m)
     for i in range(m):
-        y[i] = np.max(W[i, :] + x_test)
-    return y
+        y_salida[i] = np.max(W[i, :] + x_test)
+    return y_salida
 
 # Memoría asociativa morfológica de tipo Min
 """
@@ -105,7 +115,8 @@ def aprendizaje_min(X, Y):
     p, n = X.shape
     m = Y.shape[1]
     # INICIALIZACIÓN CRUCIAL: Debe ser un valor muy grande
-    M = np.full((m, n), 1000.0) 
+    # Inicializamos con un valor mayor al máximo posible (255)
+    M = np.full((m, n), 500) 
     
     for mu in range(p):
         diferencia = Y[mu].reshape(-1, 1) - X[mu].reshape(1, -1)
@@ -129,11 +140,13 @@ def recuperacion_min(M, x_test):
     M: Matriz de memoria generada en el aprendizaje
     x_test: Vector de imagen con ruido (aplanado)
     """
+    # Forzamos x_test a int32 para que la suma con M no falle
+    x_test = np.array(x_test, dtype=np.int32)
     m, n = M.shape
-    y = np.zeros(m)
+    y_salida = np.zeros(m)
     for i in range(m):
-        y[i] = np.min(M[i, :] + x_test)
-    return y
+        y_salida[i] = np.min(M[i, :] + x_test)
+    return y_salida
 
 # Función para guardar resultados morfológicos como imágenes
 def guardar_resultado_morfo(y_vector, shape_original, nombre_archivo, carpeta_destino="resultados"):
