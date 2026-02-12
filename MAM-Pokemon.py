@@ -22,11 +22,8 @@ def cargar_imagenes_a_matriz(rutas_imagenes):
     return np.array(datos_aplanados), shape_original
 
 # Memoría asociativa morfológica de tipo Max
+"""
 def aprendizaje_max(X, Y):
-    """
-    X: Matriz de entrada (p patrones x n pixeles)
-    Y: Matriz de salida (p patrones x m pixeles o etiquetas)
-    """
     num_patrones, n = X.shape
     m = Y.shape[1] # Cantidad de elementos en la salida
     W = np.full((m, n), -np.inf) # Inicializamos con valor muy bajo para el Max
@@ -39,25 +36,50 @@ def aprendizaje_max(X, Y):
         W = np.maximum(W, diferencia)
         
     return W
+"""
 
+# --- CORRECCIÓN DE APRENDIZAJE MAX ---
+def aprendizaje_max(X, Y):
+    """
+    X: Matriz de entrada (p patrones x n pixeles)
+    Y: Matriz de salida (p patrones x m pixeles o etiquetas)
+    """
+    p, n = X.shape
+    m = Y.shape[1]
+    # INICIALIZACIÓN CRUCIAL: Debe ser un valor muy pequeño
+    W = np.full((m, n), -1000.0) # Usamos un valor numérico seguro en lugar de -inf
+    
+    for mu in range(p):
+        # Diferencia externa: columna(Y) - fila(X)
+        diferencia = Y[mu].reshape(-1, 1) - X[mu].reshape(1, -1)
+        W = np.maximum(W, diferencia)
+    return W
+
+"""
 def recuperacion_max(W, x_test):
-    """
-    W: Matriz de memoria
-    x_test: Vector de imagen con ruido (aplanado)
-    """
     m, n = W.shape
     y_salida = np.zeros(m)
     for i in range(m):
         # Operación fundamental: Max(W_ij + x_j)
         y_salida[i] = np.max(W[i, :] + x_test)
     return y_salida
+"""
+
+# --- RECUPERACIÓN OPTIMIZADA (Para evitar desbordes) ---
+def recuperacion_max(W, x_test):
+    """
+    W: Matriz de memoria
+    x_test: Vector de imagen con ruido (aplanado)
+    """
+    m, n = W.shape
+    y = np.zeros(m)
+    for i in range(m):
+        y[i] = np.max(W[i, :] + x_test)
+    return y
 
 # Memoría asociativa morfológica de tipo Min
+"""
 def aprendizaje_min(X, Y):
-    """
-    X: Matriz de entrada (p patrones x n pixeles)
-    Y: Matriz de salida (p patrones x m pixeles o etiquetas)
-    """
     num_patrones, n = X.shape
     m = Y.shape[1] # Cantidad de elementos en la salida
     
@@ -72,12 +94,26 @@ def aprendizaje_min(X, Y):
         M = np.minimum(M, diferencia)
         
     return M
+"""
 
+# --- CORRECCIÓN DE APRENDIZAJE MIN ---
+def aprendizaje_min(X, Y):
+    """
+    X: Matriz de entrada (p patrones x n pixeles)
+    Y: Matriz de salida (p patrones x m pixeles o etiquetas)
+    """
+    p, n = X.shape
+    m = Y.shape[1]
+    # INICIALIZACIÓN CRUCIAL: Debe ser un valor muy grande
+    M = np.full((m, n), 1000.0) 
+    
+    for mu in range(p):
+        diferencia = Y[mu].reshape(-1, 1) - X[mu].reshape(1, -1)
+        M = np.minimum(M, diferencia)
+    return M
+
+"""
 def recuperacion_min(M, x_test):
-    """
-    M: Matriz de memoria generada en el aprendizaje
-    x_test: Vector de imagen con ruido (aplanado)
-    """
     m, n = M.shape
     y_salida = np.zeros(m)
     for i in range(m):
@@ -85,6 +121,19 @@ def recuperacion_min(M, x_test):
         y_salida[i] = np.min(M[i, :] + x_test)
         
     return y_salida
+"""
+
+# --- RECUPERACIÓN OPTIMIZADA (Para evitar desbordes) ---
+def recuperacion_min(M, x_test):
+    """
+    M: Matriz de memoria generada en el aprendizaje
+    x_test: Vector de imagen con ruido (aplanado)
+    """
+    m, n = M.shape
+    y = np.zeros(m)
+    for i in range(m):
+        y[i] = np.min(M[i, :] + x_test)
+    return y
 
 # Función para guardar resultados morfológicos como imágenes
 def guardar_resultado_morfo(y_vector, shape_original, nombre_archivo, carpeta_destino="resultados"):
@@ -123,9 +172,6 @@ def guardar_resultado_morfo(y_vector, shape_original, nombre_archivo, carpeta_de
     img_resultante.save(ruta_completa)
     
     print(f"Imagen guardada exitosamente en: {ruta_completa}")
-
-import numpy as np
-import os
 
 # --- FUNCIONES DE SOPORTE HETEROASOCIATIVAS ---
 def ejecutar_heteroasociativa_max(rutas_limpias, rutas_ruido, nombres_clases):
@@ -186,9 +232,9 @@ def ejecutar_autoasociativa_max(rutas_entrenamiento, rutas_con_ruido):
     for i, x_con_ruido in enumerate(X_test_ruido):
         y_rec = recuperacion_max(W_auto, x_con_ruido)
         guardar_resultado_morfo(
-            y_rec, shape_original, f"restaurada_MAX_img_{i}.png", "Resultados/Autoasociativa_Max"
+            y_rec, shape_original, f"restaurada_MAX_img_{i}.png", "Resultados\Autoasociativa_Max"
         )
-    print("Imágenes restauradas guardadas en: Resultados/Autoasociativa_Max")
+    print("Imágenes restauradas guardadas en: Resultados\Autoasociativa_Max")
 
 def ejecutar_autoasociativa_min(rutas_entrenamiento, rutas_con_ruido):
     """Limpieza de imagen con robustez a ruido aditivo (Sal/Blanco)"""
@@ -202,13 +248,46 @@ def ejecutar_autoasociativa_min(rutas_entrenamiento, rutas_con_ruido):
     M_auto = aprendizaje_min(X_train, X_train)
 
     # 3. Recuperación y Guardado
-    os.makedirs("Resultados/Autoasociativa_Min", exist_ok=True)
+    os.makedirs("Resultados\Autoasociativa_Min", exist_ok=True)
     for i, x_con_ruido in enumerate(X_test_ruido):
         y_rec = recuperacion_min(M_auto, x_con_ruido)
         guardar_resultado_morfo(
-            y_rec, shape_original, f"restaurada_MIN_img_{i}.png", "Resultados/Autoasociativa_Min"
+            y_rec, shape_original, f"restaurada_MIN_img_{i}.png", "Resultados\Autoasociativa_Min"
         )
-    print("Imágenes restauradas guardadas en: Resultados/Autoasociativa_Min")
+    print("Imágenes restauradas guardadas en: Resultados\Autoasociativa_Min")
+
+
+# --- FUNCIONES DE SOPORTE PARA EXPORTAR MATRICES A TEXTO ---
+def guardar_matrices_a_texto(rutas_entrenamiento):
+    """
+    Carga imágenes, las convierte a matrices 2D de 0-255 y las guarda en archivos .txt
+    """
+    # 1. Crear la carpeta si no existe
+    carpeta_destino="Imagenes-Matriz"
+    if not os.path.exists(carpeta_destino):
+        os.makedirs(carpeta_destino)
+        print(f"Carpeta creada: {carpeta_destino}")
+
+    for ruta in rutas_entrenamiento:
+        try:
+            # 2. Abrir imagen y asegurar escala de grises (L)
+            with Image.open(ruta).convert('L') as img:
+                # Convertimos a array de numpy (Valores 0-255)
+                matriz = np.array(img)
+                
+                # 3. Generar nombre del archivo .txt basado en la imagen original
+                nombre_base = os.path.basename(ruta).split('.')[0]
+                nombre_txt = f"{nombre_base}_matriz.txt"
+                ruta_txt = os.path.join(carpeta_destino, nombre_txt).replace("\\", "/")
+                
+                # 4. Guardar la matriz con formato legible (enteros)
+                # fmt='%d' asegura que se guarden como enteros (0, 255) y no decimales
+                np.savetxt(ruta_txt, matriz, fmt='%d', delimiter='\t')
+                
+                print(f"Matriz exportada exitosamente: {ruta_txt}")
+                
+        except Exception as e:
+            print(f"Error al procesar {ruta}: {e}")
 
 
 # --- INTERFAZ DE USUARIO EN CONSOLA ---
@@ -224,6 +303,7 @@ def mostrar_menu():
     print("========================================================================================================")
     print("                     PROYECTO RECONOCIMIENTO DE IMÁGENES - MAM (IPN - ESCOM)  ")
     print("========================================================================================================")
+    print("0. Exportar Matrices de Diagnóstico (0-255 a .txt)")
     print("1. MAM Heteroasociativa MAX (Clasificación - Ruido Negro)")
     print("2. MAM Heteroasociativa MIN (Clasificación - Ruido Blanco)")
     print("3. MAM Autoasociativa MAX (Restauración - Ruido Negro)")
@@ -236,25 +316,30 @@ def ejecutar_programa():
     # --- CONFIGURACIÓN DE RUTAS ---
     clases_pokemon = ["Charmander", "Gengar", "Mewtwo", "Pikachu", "Squirtle"]
     rutas_entrenamiento = [
-        "CFP/Fase de aprendizaje/Charmander.bmp",
-        "CFP/Fase de aprendizaje/Gengar.bmp",
-        "CFP/Fase de aprendizaje/Mewtwo.bmp", 
-        "CFP/Fase de aprendizaje/Pikachu.bmp",   
-        "CFP/Fase de aprendizaje/Squirtle.bmp" 
+        "CFP\Fase de aprendizaje\Charmander.bmp",
+        "CFP\Fase de aprendizaje\Gengar.bmp",
+        "CFP\Fase de aprendizaje\Mewtwo.bmp", 
+        "CFP\Fase de aprendizaje\Pikachu.bmp",   
+        "CFP\Fase de aprendizaje\Squirtle.bmp" 
     ]
     rutas_con_ruido = [
-        "CFP/Patrones espurios/Charmander-Ruido.bmp", 
-        "CFP/Patrones espurios/Gengar-Ruido.bmp", 
-        "CFP/Patrones espurios/Mewtwo-Ruido.bmp", 
-        "CFP/Patrones espurios/Pikachu-Ruido.bmp", 
-        "CFP/Patrones espurios/Squirtle-Ruido.bmp"
+        "CFP\Patrones espurios\Charmander-Ruido.bmp", 
+        "CFP\Patrones espurios\Gengar-Ruido.bmp", 
+        "CFP\Patrones espurios\Mewtwo-Ruido.bmp", 
+        "CFP\Patrones espurios\Pikachu-Ruido.bmp", 
+        "CFP\Patrones espurios\Squirtle-Ruido.bmp"
     ]
 
     while True:
         mostrar_menu()
         opcion = input("Seleccione una opción (1-5): ")
 
-        if opcion == "1":
+        if opcion == "0":
+            # Usamos la misma lista de rutas que definiste para el entrenamiento
+            guardar_matrices_a_texto(rutas_entrenamiento)
+            input("\nPresione Enter para volver al menú...")
+
+        elif opcion == "1":
             ejecutar_heteroasociativa_max(rutas_entrenamiento, rutas_con_ruido, clases_pokemon)
             input("\nPresione Enter para volver al menú...")
         
