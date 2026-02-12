@@ -14,6 +14,11 @@ def aprendizaje_max(X, Y):
     for mu in range(p):
         diff = Y[mu].reshape(-1, 1) - X[mu].reshape(1, -1)
         W = np.maximum(W, diff)
+    carpeta_destino="Matriz-Aprendizaje-Max"
+    nombre_archivo = "Matriz_W_Max.txt"
+    if not os.path.exists(carpeta_destino): os.makedirs(carpeta_destino)
+    np.savetxt(os.path.join(carpeta_destino, nombre_archivo), W, fmt='%d', delimiter=',')
+    print(f"Matriz W exportada como {nombre_archivo}")
     return W
 
 def aprendizaje_min(X, Y):
@@ -234,10 +239,17 @@ def mostrar_menu():
     print("====================================================")
 
 def main():
-    clases_pokes = ["Charmander", "Gengar", "Mewtwo", "Pikachu", "Squirtle"]
+    nombres_pokes = ["Charmander", "Gengar", "Mewtwo", "Pikachu", "Squirtle"]
+    clases_pokes = {
+    0: np.array([255, 0, 0, 0, 0]), # Pokemon 1
+    1: np.array([0, 255, 0, 0, 0]), # Pokemon 2
+    2: np.array([0, 0, 255, 0, 0]), # Pokemon 3
+    3: np.array([0, 0, 0, 255, 0]), # Pokemon 4
+    4: np.array([0, 0, 0, 0, 255])  # Pokemon 5
+    }
     # Rutas relativas basadas en tu repo
-    rutas_entrenamiento = [f"CFP/Fase de aprendizaje/{c}.bmp" for c in clases_pokes]
-    rutas_con_ruido = [f"CFP/Patrones espurios/{c}-Ruido.bmp" for c in clases_pokes]
+    rutas_entrenamiento = [f"CFP/Fase de aprendizaje/{c}.bmp" for c in nombres_pokes]
+    rutas_con_ruido = [f"CFP/Patrones espurios/{c}-Ruido.bmp" for c in nombres_pokes]
 
     while True:
         mostrar_menu()
