@@ -294,11 +294,13 @@ def guardar_matrices_a_texto(rutas_imagenes):
 
     for ruta in rutas_imagenes:
         with Image.open(ruta).convert('L') as img:
-            arr = np.array(img)
+            arr = np.array(img, dtype=np.int32)
             
-            # Aplicamos la misma lógica de corrección que en la carga
-            if arr.max() <= 1:
-                arr = arr * 255
+            # --- INVERSIÓN PARA MAM (Fondo negro, Objeto blanco) ---
+            # Si el fondo es blanco (255), lo invertimos para que el 
+            # Pokémon sea el valor alto (255) y la memoria pueda "aprenderlo".
+            arr = 255 - arr 
+            # -------------------------------------------------------
                 
             matriz = arr.astype(np.int32)
             nombre_base = os.path.basename(ruta).replace(".bmp", "").replace(".png", "")
